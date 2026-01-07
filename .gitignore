@@ -2,3 +2,4 @@ data/*
 data
 fusion_tramway.csv
 stops_tramway_clean.csv
+meteo_conditions_bordeaux.csv
