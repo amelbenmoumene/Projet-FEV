@@ -73,6 +73,8 @@ def fusion_tramway():
     # Supprimer lignes incomplètes
     df_final = df_final.dropna(subset=[col for col in colonnes_obligatoires if col in df_final.columns])
     
+    #Mettre la localisation en miniscule 
+    df_final["Localisation"] = (df_final["Localisation"].astype(str).str.strip().str.lower())
     # Export CSV
     df_final.to_csv("fusion_tramway.csv", index=False, encoding="utf-8-sig")
 
