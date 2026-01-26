@@ -1,60 +1,92 @@
 import pandas as pd
+import numpy as np
 
-def preparer_meteo_bordeaux():
-    df = pd.read_csv(
-        "data/observation-meteorologique-historiques-bordeaux-metropole-synop.csv",
-        sep=";",
-        encoding="utf-8",
-        low_memory=False
-    )
+df = pd.read_excel(
+    "data/open-meteo-44.82N0.56W14m.xlsx",
+    skiprows=3
+)
 
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce", utc=True)
-    df = df[df["Date"].dt.year.between(2017, 2023)]
+df.columns = (
+    df.columns
+    .str.lower()
+    .str.strip()
+    .str.replace(" ", "_")
+    .str.replace("(", "", regex=False)
+    .str.replace(")", "", regex=False)
+    .str.replace("°c", "c")
+    .str.replace("%", "pct")
+)
 
-    df = df.rename(columns={
-        "Précipitations dans la dernière heure": "precip_1h",
-        "Vitesse du vent moyen 10 mn": "wind_speed",
-        "Température (°C)": "temperature_c",
-        "Visibilité horizontale": "visibility"
-    })
+if "time" not in df.columns:
+    raise ValueError("La colonne 'time' n'a pas été trouvée")
 
-    # Définition condition météo
-    def definir_condition(row):
-        if pd.notna(row["precip_1h"]) and row["precip_1h"] > 0:
-            return "pluie"
-        elif pd.notna(row["wind_speed"]) and row["wind_speed"] >= 8:
-            return "vent_fort"
-        elif pd.notna(row["temperature_c"]) and row["temperature_c"] >= 30:
-            return "forte_chaleur"
-        elif pd.notna(row["visibility"]) and row["visibility"] >= 20000:
-            return "ensoleille"
-        else:
-            return "normal"
+df["time"] = pd.to_datetime(df["time"], errors="coerce")
 
-    df["condition_meteo"] = df.apply(definir_condition, axis=1)
+colonnes_numeriques = [
+    "temperature_2m_c",
+    "apparent_temperature_c",
+    "relative_humidity_2m_pct",
+    "wind_speed_10m_km/h",
+    "wind_gusts_10m_km/h",
+    "precipitation_mm",
+    "rain_mm"
+]
 
-    conditions_utiles = [
-        "pluie",
-        "vent_fort",
-        "ensoleille",
-        "forte_chaleur"
-    ]
+for col in colonnes_numeriques:
+    if col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+df = df.dropna(subset=["time"])
 
-    df = df[df["condition_meteo"].isin(conditions_utiles)]
-    df_final = df[[
-        "Date",
-        "condition_meteo",
-        "temperature_c",
-        "wind_speed",
-        "precip_1h",
-        "visibility"
-    ]]
+df = df.sort_values("time")
+df = df.set_index("time")
 
-    df_final.to_csv(
-        "meteo_conditions_bordeaux.csv",
-        index=False,
-        encoding="utf-8-sig"
-    )
+for col in colonnes_numeriques:
+    if col in df.columns:
+        df[col] = df[col].interpolate(method="time")
 
-    return df_final
-df_meteo = preparer_meteo_bordeaux()
+df = df.reset_index()
+
+def definir_condition_meteo(row):
+    temp = row["temperature_2m_c"]
+    pluie = row["precipitation_mm"]
+    vent = row["wind_gusts_10m_km/h"]
+    humidite = row["relative_humidity_2m_pct"]
+
+    if pluie >= 10:
+        return "Pluie intense"
+    elif pluie > 0:
+        return "Pluie"
+    elif temp <= 0:
+        return "Gel"
+    elif temp >= 30:
+        return "Forte chaleur"
+    elif vent >= 50:
+        return "Vent fort"
+    elif humidite >= 95 and temp <= 5:
+        return "Brouillard"
+    else:
+        return "Temps calme"
+
+df["condition_meteo"] = df.apply(definir_condition_meteo, axis=1)
+
+colonnes_finales = [
+    "time",
+    "temperature_2m_c",
+    "relative_humidity_2m_pct",
+    "wind_speed_10m_km/h",
+    "wind_gusts_10m_km/h",
+    "precipitation_mm",
+    "condition_meteo"
+]
+
+df = df[colonnes_finales]
+
+df.to_csv(
+    "meteo_bordeaux_cleaned.csv",
+    sep=";",
+    decimal=",",
+    index=False
+)
+
+print("Script exécuté avec succès")
+print("Une seule colonne condition_meteo, données propres")
